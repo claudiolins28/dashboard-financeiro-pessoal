@@ -105,14 +105,21 @@ def get_salary_for_month(dim_meses: pd.DataFrame, month: str | None) -> float:
     return float(month_row[salary_cols[0]].fillna(0).sum())
 
 
-def page_visao_geral(data: dict[str, pd.DataFrame], filtered_transactions: pd.DataFrame, selected_months: list[str]):
+def page_visao_geral(
+    data: dict[str, pd.DataFrame],
+    filtered_transactions: pd.DataFrame,
+    selected_months: list[str],
+    annual_transactions: pd.DataFrame | None = None,
+):
     st.title("Visão Geral")
     personal = personal_costs(filtered_transactions)
+    annual_personal = personal_costs(annual_transactions if annual_transactions is not None else filtered_transactions)
     month_focus = selected_months[-1] if selected_months else (available_months(personal)[-1] if available_months(personal) else None)
     month_personal = personal[personal["mes_periodo"] == month_focus] if month_focus and "mes_periodo" in personal.columns else personal
 
     monthly = monthly_sum(personal)
     current_total = float(month_personal.get("valor_real_dashboard", pd.Series(dtype=float)).sum()) if not month_personal.empty else 0.0
+    year_total = float(annual_personal.get("valor_real_dashboard", pd.Series(dtype=float)).sum()) if not annual_personal.empty else 0.0
     salary = get_salary_for_month(data.get("dim_meses", pd.DataFrame()), month_focus)
     balance = salary - current_total
 
@@ -125,13 +132,15 @@ def page_visao_geral(data: dict[str, pd.DataFrame], filtered_transactions: pd.Da
                 previous = float(monthly.iloc[idx - 1]["valor"])
                 previous_delta = format_brl(current_total - previous)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         metric_card("Receita/salário do mês", format_brl(salary))
     with c2:
         metric_card(f"Gastos pessoais do mês ({month_label(month_focus)})", format_brl(current_total), previous_delta)
     with c3:
         metric_card("Saldo estimado do mês", format_brl(balance))
+    with c4:
+        metric_card("Gastos pessoais no ano", format_brl(year_total))
 
     left, right = st.columns([1.35, 1])
     with left:
@@ -449,6 +458,7 @@ def render_app():
     selected_categories = st.sidebar.multiselect("Categoria", options=filter_options(transactions, "categoria_dashboard"))
 
     filtered_transactions = apply_global_filters(transactions, selected_months, selected_origins, selected_categories)
+    annual_transactions = apply_global_filters(transactions, [], selected_origins, selected_categories)
 
     page = st.sidebar.radio(
         "Página",
@@ -465,7 +475,7 @@ def render_app():
     )
 
     if page == "Visão Geral":
-        page_visao_geral(data, filtered_transactions, selected_months)
+        page_visao_geral(data, filtered_transactions, selected_months, annual_transactions)
     elif page == "Transações":
         page_transacoes(filtered_transactions)
     elif page == "Categorias":
