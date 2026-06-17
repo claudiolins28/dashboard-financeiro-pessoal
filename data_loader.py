@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -130,7 +131,7 @@ def secrets_available() -> bool:
 
 
 def _to_plain_dict(value: Any) -> Any:
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {key: _to_plain_dict(item) for key, item in value.items()}
     return value
 
