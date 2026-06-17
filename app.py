@@ -208,10 +208,7 @@ def page_transacoes(filtered_transactions: pd.DataFrame):
         "categoria_original_excel",
         "valor_real_dashboard",
         "valor_euro_dashboard",
-        "entra_custo_pessoal",
         "parcela_compra",
-        "linha_total_manual",
-        "is_pagamento_fatura",
     ]
     visible_cols = [col for col in preferred_cols if col in df.columns]
     st.dataframe(df[visible_cols] if visible_cols else df, width="stretch", hide_index=True)
