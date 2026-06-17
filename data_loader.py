@@ -527,12 +527,25 @@ def _demo_rows() -> dict[str, list[dict[str, Any]]]:
             {"categoria_dashboard": "Bet retorno", "grupo": "Apostas"},
         ],
         "fact_marta": [
-            {"mes": "Janeiro", "item": "Internet compartilhada", "valor_real_dashboard": "120,00"},
-            {"mes": "Janeiro", "item": "Mercado compartilhado", "valor_real_dashboard": "240,00"},
-            {"mes": "Fevereiro", "item": "Internet compartilhada", "valor_real_dashboard": "120,00"},
-            {"mes": "Fevereiro", "item": "Farmácia compartilhada", "valor_real_dashboard": "80,00"},
-            {"mes": "Março", "item": "Internet compartilhada", "valor_real_dashboard": "120,00"},
-            {"mes": "Março", "item": "Total Marta", "valor_real_dashboard": "120,00"},
+            {"mes": "Janeiro", "item": "Aluguel", "valor_real_dashboard": "2250,00"},
+            {"mes": "Janeiro", "item": "Condomínio", "valor_real_dashboard": "360,00"},
+            {"mes": "Janeiro", "item": "IPTU", "valor_real_dashboard": "90,00"},
+            {"mes": "Janeiro", "item": "Internet + TV", "valor_real_dashboard": "120,00"},
+            {"mes": "Janeiro", "item": "Gympass", "valor_real_dashboard": "180,00"},
+            {"mes": "Fevereiro", "item": "Aluguel", "valor_real_dashboard": "2250,00"},
+            {"mes": "Fevereiro", "item": "Condomínio", "valor_real_dashboard": "365,00"},
+            {"mes": "Fevereiro", "item": "Seguro telemóvel", "valor_real_dashboard": "45,00"},
+            {"mes": "Fevereiro", "item": "Luz", "valor_real_dashboard": "160,00"},
+            {"mes": "Fevereiro", "item": "Gás", "valor_real_dashboard": "70,00"},
+            {"mes": "Fevereiro", "item": "Gympass", "valor_real_dashboard": "180,00"},
+            {"mes": "Março", "item": "Aluguel", "valor_real_dashboard": "2250,00"},
+            {"mes": "Março", "item": "Condomínio", "valor_real_dashboard": "370,00"},
+            {"mes": "Março", "item": "IPTU", "valor_real_dashboard": "90,00"},
+            {"mes": "Março", "item": "Internet + TV", "valor_real_dashboard": "120,00"},
+            {"mes": "Março", "item": "Luz", "valor_real_dashboard": "150,00"},
+            {"mes": "Março", "item": "Gás", "valor_real_dashboard": "65,00"},
+            {"mes": "Março", "item": "Gympass", "valor_real_dashboard": "180,00"},
+            {"mes": "Março", "item": "Total Marta", "valor_real_dashboard": "2865,00"},
         ],
         "fact_aluguel": [
             {"mes": "Janeiro", "item": "Aluguel", "valor_real_dashboard": "4500,00"},
@@ -561,7 +574,6 @@ def _demo_rows() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-@st.cache_data(show_spinner=False)
 def load_demo_data() -> dict[str, pd.DataFrame]:
     rows_by_sheet = _demo_rows()
     data: dict[str, pd.DataFrame] = {}

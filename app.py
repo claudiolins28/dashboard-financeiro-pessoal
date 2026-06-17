@@ -10,6 +10,7 @@ from data_loader import (
     get_value_column,
     load_dashboard_data,
     month_label,
+    normalize_text,
     validate_loaded_data,
 )
 
@@ -295,6 +296,71 @@ def page_origem(filtered_transactions: pd.DataFrame):
         st.info(f"{invoice_count} linha(s) de pagamento de fatura/cartão foram identificadas e ficam fora dos custos pessoais.")
 
 
+MARTA_HOUSE_TERMS = (
+    "aluguel",
+    "aluguer",
+    "alugue",
+    "condominio",
+    "iptu",
+    "internet",
+    "tv",
+    "seguro telemovel",
+    "luz",
+    "gas",
+)
+
+
+def build_marta_table(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=["Mês", "Item", "Tipo", "Valor"])
+
+    value_col = get_value_column(df)
+    if not value_col:
+        return pd.DataFrame(columns=["Mês", "Item", "Tipo", "Valor"])
+
+    clean = df[~df.get("linha_total_manual", pd.Series(False, index=df.index))].copy()
+    item_col = "item" if "item" in clean.columns else ("descricao" if "descricao" in clean.columns else None)
+    if not item_col:
+        return pd.DataFrame(columns=["Mês", "Item", "Tipo", "Valor"])
+
+    text = clean[item_col].apply(normalize_text)
+    house_mask = text.apply(lambda item: any(term in item for term in MARTA_HOUSE_TERMS))
+    gympass_mask = text.str.contains("gympass", na=False)
+    clean = clean[house_mask | gympass_mask].copy()
+    if clean.empty:
+        return pd.DataFrame(columns=["Mês", "Item", "Tipo", "Valor"])
+
+    clean["Tipo"] = "Custo de casa"
+    clean.loc[gympass_mask.loc[clean.index], "Tipo"] = "Abatimento Gympass"
+    clean["ordem"] = 0
+    clean.loc[gympass_mask.loc[clean.index], "ordem"] = 1
+    clean["Valor"] = clean[value_col].fillna(0).abs()
+    clean.loc[gympass_mask.loc[clean.index], "Valor"] = -clean.loc[gympass_mask.loc[clean.index], "Valor"]
+    clean["Mês"] = clean.get("mes_label", pd.Series("Sem mês", index=clean.index))
+    clean["Item"] = clean[item_col].fillna("").astype(str)
+
+    detail = clean[["Mês", "Item", "Tipo", "Valor", "ordem"]].sort_values(["Mês", "ordem", "Item"])
+    totals = (
+        detail.groupby("Mês", as_index=False)["Valor"]
+        .sum()
+        .assign(Item="Total a receber da Marta", Tipo="Total", ordem=2)
+    )
+    table = pd.concat([detail, totals[["Mês", "Item", "Tipo", "Valor", "ordem"]]], ignore_index=True)
+    return table.sort_values(["Mês", "ordem", "Item"]).drop(columns=["ordem"]).reset_index(drop=True)
+
+
+def page_marta(df: pd.DataFrame):
+    st.title("Marta")
+    table = build_marta_table(df)
+    if table.empty:
+        st.info("Não encontrei itens de casa ou Gympass para calcular o valor da Marta neste período.")
+        return
+
+    display = table.copy()
+    display["Valor"] = display["Valor"].apply(format_brl)
+    st.dataframe(display, width="stretch", hide_index=True)
+
+
 def generic_fact_page(title: str, df: pd.DataFrame, item_fallback: str = "item"):
     st.title(title)
     if df.empty:
@@ -492,7 +558,7 @@ def render_app():
     elif page == "Origem dos gastos":
         page_origem(filtered_transactions)
     elif page == "Marta":
-        generic_fact_page("Marta", filter_by_month(data.get("fact_marta", pd.DataFrame()), selected_months))
+        page_marta(filter_by_month(data.get("fact_marta", pd.DataFrame()), selected_months))
     elif page == "Aluguel/Casa":
         generic_fact_page("Aluguel/Casa", filter_by_month(data.get("fact_aluguel", pd.DataFrame()), selected_months))
     elif page == "Apostas KTO":
