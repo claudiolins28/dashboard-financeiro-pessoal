@@ -128,11 +128,11 @@ def page_visao_geral(data: dict[str, pd.DataFrame], filtered_transactions: pd.Da
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        metric_card(f"Gastos pessoais do mês ({month_label(month_focus)})", format_brl(current_total), previous_delta)
-    with c2:
-        metric_card("Gastos pessoais no ano", format_brl(year_total))
-    with c3:
         metric_card("Receita/salário do mês", format_brl(salary))
+    with c2:
+        metric_card(f"Gastos pessoais do mês ({month_label(month_focus)})", format_brl(current_total), previous_delta)
+    with c3:
+        metric_card("Gastos pessoais no ano", format_brl(year_total))
     with c4:
         metric_card("Saldo estimado do mês", format_brl(balance))
 
