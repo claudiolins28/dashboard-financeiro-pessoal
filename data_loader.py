@@ -297,13 +297,17 @@ def _add_transaction_flags(df: pd.DataFrame) -> pd.DataFrame:
     description = df.get("descricao_norm", pd.Series("", index=df.index)).fillna("")
     origin = df.get("origem_norm", pd.Series("", index=df.index)).fillna("")
     combined = (category + " " + description + " " + origin).apply(normalize_text)
+    source_is_bet = (
+        df.get("is_bet", pd.Series(False, index=df.index)).apply(normalize_text).isin(["sim", "s", "yes", "true", "1"])
+    )
+    source_is_bet_retorno = df.get("is_bet_retorno", pd.Series(False, index=df.index)).apply(normalize_text).isin(
+        ["sim", "s", "yes", "true", "1"]
+    )
 
-    df["is_bet_investimento"] = category.str.fullmatch(r"(?:bet|aposta|apostas|kto)", na=False) | combined.str.contains(
-        r"\b(?:bet|aposta|apostas|kto)\b", na=False
-    )
-    df["is_bet_retorno"] = category.str.contains(r"(?:bet retorno|retorno bet|levantamento|saque kto)", na=False) | combined.str.contains(
-        r"\b(?:bet retorno|retorno bet|levantamento|saque kto)\b", na=False
-    )
+    df["is_bet_retorno"] = category.str.fullmatch(
+        r"(?:bet retorno|retorno bet|aposta retorno|apostas retorno)", na=False
+    ) | source_is_bet_retorno
+    df["is_bet_investimento"] = category.str.fullmatch(r"(?:bet|aposta|apostas|kto)", na=False) | source_is_bet
     df.loc[df["is_bet_retorno"], "is_bet_investimento"] = False
 
     df["is_pagamento_fatura"] = combined.str.contains(
@@ -315,13 +319,42 @@ def _add_transaction_flags(df: pd.DataFrame) -> pd.DataFrame:
     else:
         df["entra_custo_pessoal_bool"] = False
 
+    value_valid = (
+        df["valor_real_dashboard"].notna() if "valor_real_dashboard" in df.columns else pd.Series(False, index=df.index)
+    )
     df["custo_pessoal_valido"] = (
         df["entra_custo_pessoal_bool"]
+        & value_valid
         & ~df["linha_total_manual"]
         & ~df["is_pagamento_fatura"]
         & ~df["is_bet_investimento"]
         & ~df["is_bet_retorno"]
     )
+    df["motivo_exclusao"] = ""
+    df.loc[~value_valid, "motivo_exclusao"] = "valor nulo ou inválido"
+    df.loc[value_valid & df["linha_total_manual"], "motivo_exclusao"] = "total/subtotal"
+    df.loc[value_valid & ~df["linha_total_manual"] & df["is_bet_retorno"], "motivo_exclusao"] = "categoria Bet retorno"
+    df.loc[
+        value_valid & ~df["linha_total_manual"] & ~df["is_bet_retorno"] & df["is_bet_investimento"],
+        "motivo_exclusao",
+    ] = "categoria Bet"
+    df.loc[
+        value_valid
+        & ~df["linha_total_manual"]
+        & ~df["is_bet_retorno"]
+        & ~df["is_bet_investimento"]
+        & df["is_pagamento_fatura"],
+        "motivo_exclusao",
+    ] = "fatura/cartão"
+    df.loc[
+        value_valid
+        & ~df["linha_total_manual"]
+        & ~df["is_bet_retorno"]
+        & ~df["is_bet_investimento"]
+        & ~df["is_pagamento_fatura"]
+        & ~df["entra_custo_pessoal_bool"],
+        "motivo_exclusao",
+    ] = "entra_custo_pessoal = Não"
     return df
 
 
@@ -332,6 +365,11 @@ def _standardize_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
     df = df.copy()
     df.columns = [normalize_column_name(col) for col in df.columns]
     df = df.dropna(how="all")
+    if sheet_name == "fact_transacoes":
+        if "origem" not in df.columns and "fonte" in df.columns:
+            df["origem"] = df["fonte"]
+        if "descricao" not in df.columns and "nome_custo" in df.columns:
+            df["descricao"] = df["nome_custo"]
 
     for column in [col for col in df.columns if col.startswith("data") or col == "date"]:
         df[column] = pd.to_datetime(df[column], dayfirst=True, errors="coerce")
@@ -364,7 +402,7 @@ def _read_sheet(spreadsheet: gspread.Spreadsheet, sheet_name: str) -> pd.DataFra
     except gspread.WorksheetNotFound as exc:
         raise RuntimeError(f"A aba '{sheet_name}' não foi encontrada no Google Sheets.") from exc
 
-    rows = worksheet.get_all_records()
+    rows = worksheet.get_all_records(numericise_ignore=["all"])
     if not rows:
         return _empty_sheet_frame()
     return pd.DataFrame(rows)

@@ -94,6 +94,153 @@ def monthly_sum(df: pd.DataFrame, value_col: str = "valor_real_dashboard") -> pd
     return result
 
 
+def sum_value(df: pd.DataFrame, value_col: str = "valor_real_dashboard") -> float:
+    if df.empty or value_col not in df.columns:
+        return 0.0
+    return float(df[value_col].fillna(0).sum())
+
+
+def diagnostic_columns(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    view = df.copy()
+    if "mes_nome" not in view.columns and "mes_label" in view.columns:
+        view["mes_nome"] = view["mes_label"]
+    available = [column for column in columns if column in view.columns]
+    return view[available].head(100)
+
+
+def build_transaction_diagnostics(transactions: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    if transactions.empty:
+        empty = pd.DataFrame()
+        return {
+            "resumo": empty,
+            "exclusoes": empty,
+            "meses": empty,
+            "categorias": empty,
+            "origens": empty,
+            "incluidas": empty,
+            "excluidas": empty,
+        }
+
+    tx = transactions.copy()
+    value_col = "valor_real_dashboard"
+    personal = personal_costs(tx)
+    excluded = tx[~tx.get("custo_pessoal_valido", pd.Series(False, index=tx.index))].copy()
+
+    entra = tx.get("entra_custo_pessoal_norm", pd.Series("", index=tx.index)).fillna("")
+    is_sim = entra.isin(["sim", "s", "yes", "true", "1"])
+    is_nao = entra.isin(["nao", "n", "no", "false", "0"])
+
+    resumo = pd.DataFrame(
+        [
+            {"métrica": "Linhas carregadas em fact_transacoes", "valor": len(tx)},
+            {"métrica": "Linhas com entra_custo_pessoal = Sim", "valor": int(is_sim.sum())},
+            {"métrica": "Linhas com entra_custo_pessoal = Não", "valor": int(is_nao.sum())},
+            {"métrica": "Soma de valor_real_dashboard antes dos filtros", "valor": sum_value(tx, value_col)},
+            {"métrica": "Soma de valor_real_dashboard depois dos filtros de gasto pessoal", "valor": sum_value(personal, value_col)},
+        ]
+    )
+
+    if excluded.empty:
+        exclusoes = pd.DataFrame(columns=["motivo_exclusao", "quantidade_linhas", "soma_valor_real_dashboard"])
+    else:
+        excluded["motivo_exclusao"] = excluded.get("motivo_exclusao", "").replace("", "outros").fillna("outros")
+        exclusoes = (
+            excluded.groupby("motivo_exclusao", as_index=False)
+            .agg(quantidade_linhas=(value_col, "size"), soma_valor_real_dashboard=(value_col, "sum"))
+            .sort_values("soma_valor_real_dashboard", ascending=False)
+        )
+
+    bruto_mes = monthly_sum(tx, value_col).rename(columns={"valor": "total_bruto_antes_dos_filtros"})
+    pessoal_mes = monthly_sum(personal, value_col).rename(columns={"valor": "total_gasto_pessoal"})
+    excluido_mes = monthly_sum(excluded, value_col).rename(columns={"valor": "total_excluido"})
+    non_total = ~tx.get("linha_total_manual", pd.Series(False, index=tx.index))
+    bet_mes = monthly_sum(
+        tx[tx.get("is_bet_investimento", pd.Series(False, index=tx.index)) & non_total],
+        value_col,
+    ).rename(columns={"valor": "total_bet"})
+    bet_retorno_mes = monthly_sum(
+        tx[tx.get("is_bet_retorno", pd.Series(False, index=tx.index)) & non_total],
+        value_col,
+    ).rename(columns={"valor": "total_bet_retorno"})
+    meses = bruto_mes[["mes_periodo", "mes_label", "total_bruto_antes_dos_filtros"]]
+    for frame, column in [
+        (pessoal_mes, "total_gasto_pessoal"),
+        (excluido_mes, "total_excluido"),
+        (bet_mes, "total_bet"),
+        (bet_retorno_mes, "total_bet_retorno"),
+    ]:
+        meses = meses.merge(frame[["mes_periodo", column]], on="mes_periodo", how="outer")
+    meses["mes_label"] = meses["mes_label"].fillna(meses["mes_periodo"].apply(month_label))
+    numeric_month_columns = [
+        "total_bruto_antes_dos_filtros",
+        "total_gasto_pessoal",
+        "total_excluido",
+        "total_bet",
+        "total_bet_retorno",
+    ]
+    meses[numeric_month_columns] = meses[numeric_month_columns].fillna(0)
+    meses = meses.sort_values("mes_periodo")
+
+    if personal.empty or "categoria_dashboard" not in personal.columns:
+        categorias = pd.DataFrame(
+            columns=["categoria_dashboard", "quantidade_linhas", "soma_valor_real_dashboard", "percentual_gasto_pessoal"]
+        )
+    else:
+        total_personal = sum_value(personal, value_col)
+        categorias = (
+            personal.groupby("categoria_dashboard", as_index=False)
+            .agg(quantidade_linhas=(value_col, "size"), soma_valor_real_dashboard=(value_col, "sum"))
+            .sort_values("soma_valor_real_dashboard", ascending=False)
+        )
+        categorias["percentual_gasto_pessoal"] = (
+            categorias["soma_valor_real_dashboard"] / total_personal * 100 if total_personal else 0
+        )
+
+    if personal.empty or "origem" not in personal.columns:
+        origens = pd.DataFrame(columns=["origem", "quantidade_linhas", "soma_valor_real_dashboard"])
+    else:
+        origens = (
+            personal.groupby("origem", as_index=False)
+            .agg(quantidade_linhas=(value_col, "size"), soma_valor_real_dashboard=(value_col, "sum"))
+            .sort_values("soma_valor_real_dashboard", ascending=False)
+        )
+
+    included_cols = [
+        "data",
+        "mes_nome",
+        "origem",
+        "categoria_dashboard",
+        "categoria_original_excel",
+        "descricao",
+        "valor_real_dashboard",
+        "entra_custo_pessoal",
+        "parcela_compra",
+    ]
+    excluded_cols = [
+        "data",
+        "mes_nome",
+        "origem",
+        "categoria_dashboard",
+        "categoria_original_excel",
+        "descricao",
+        "valor_real_dashboard",
+        "entra_custo_pessoal",
+        "motivo_exclusao",
+    ]
+
+    return {
+        "resumo": resumo,
+        "exclusoes": exclusoes,
+        "meses": meses,
+        "categorias": categorias,
+        "origens": origens,
+        "incluidas": diagnostic_columns(personal, included_cols),
+        "excluidas": diagnostic_columns(excluded, excluded_cols),
+    }
+
+
 def get_salary_for_month(dim_meses: pd.DataFrame, month: str | None) -> float:
     if dim_meses.empty or not month or "mes_periodo" not in dim_meses.columns:
         return 0.0
@@ -486,6 +633,51 @@ def page_diagnostico(data: dict[str, pd.DataFrame]):
         )
     st.subheader("Abas carregadas")
     st.dataframe(pd.DataFrame(summary), width="stretch", hide_index=True)
+
+    transactions = data.get("fact_transacoes", pd.DataFrame())
+    diagnostics = build_transaction_diagnostics(transactions)
+
+    st.subheader("A. Resumo da leitura")
+    if diagnostics["resumo"].empty:
+        st.info("A aba fact_transacoes está vazia ou não foi carregada.")
+    else:
+        st.dataframe(diagnostics["resumo"], width="stretch", hide_index=True)
+
+    st.subheader("B. Linhas excluídas dos gastos pessoais")
+    if diagnostics["exclusoes"].empty:
+        st.success("Nenhuma linha foi excluída dos gastos pessoais.")
+    else:
+        st.dataframe(diagnostics["exclusoes"], width="stretch", hide_index=True)
+
+    st.subheader("C. Totais por mês")
+    if diagnostics["meses"].empty:
+        st.info("Ainda não há meses reconhecidos em fact_transacoes.")
+    else:
+        st.dataframe(diagnostics["meses"], width="stretch", hide_index=True)
+
+    st.subheader("D. Totais por categoria")
+    if diagnostics["categorias"].empty:
+        st.info("Ainda não há categorias consideradas nos gastos pessoais.")
+    else:
+        st.dataframe(diagnostics["categorias"], width="stretch", hide_index=True)
+
+    st.subheader("E. Totais por origem")
+    if diagnostics["origens"].empty:
+        st.info("Ainda não há origens consideradas nos gastos pessoais.")
+    else:
+        st.dataframe(diagnostics["origens"], width="stretch", hide_index=True)
+
+    st.subheader("F. Amostra das linhas consideradas nos gastos pessoais")
+    if diagnostics["incluidas"].empty:
+        st.info("Nenhuma linha entrou no cálculo de gastos pessoais.")
+    else:
+        st.dataframe(diagnostics["incluidas"], width="stretch", hide_index=True)
+
+    st.subheader("G. Amostra das linhas excluídas")
+    if diagnostics["excluidas"].empty:
+        st.info("Nenhuma linha foi excluída dos gastos pessoais.")
+    else:
+        st.dataframe(diagnostics["excluidas"], width="stretch", hide_index=True)
 
     issues = validate_loaded_data(data)
     st.subheader("Alertas")
