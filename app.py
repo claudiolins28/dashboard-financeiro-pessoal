@@ -113,7 +113,6 @@ def page_visao_geral(data: dict[str, pd.DataFrame], filtered_transactions: pd.Da
 
     monthly = monthly_sum(personal)
     current_total = float(month_personal.get("valor_real_dashboard", pd.Series(dtype=float)).sum()) if not month_personal.empty else 0.0
-    year_total = float(personal.get("valor_real_dashboard", pd.Series(dtype=float)).sum()) if not personal.empty else 0.0
     salary = get_salary_for_month(data.get("dim_meses", pd.DataFrame()), month_focus)
     balance = salary - current_total
 
@@ -126,14 +125,12 @@ def page_visao_geral(data: dict[str, pd.DataFrame], filtered_transactions: pd.Da
                 previous = float(monthly.iloc[idx - 1]["valor"])
                 previous_delta = format_brl(current_total - previous)
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
         metric_card("Receita/salário do mês", format_brl(salary))
     with c2:
         metric_card(f"Gastos pessoais do mês ({month_label(month_focus)})", format_brl(current_total), previous_delta)
     with c3:
-        metric_card("Gastos pessoais no ano", format_brl(year_total))
-    with c4:
         metric_card("Saldo estimado do mês", format_brl(balance))
 
     left, right = st.columns([1.35, 1])
