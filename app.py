@@ -168,6 +168,7 @@ def page_visao_geral(
                 .sort_values("valor_real_dashboard", ascending=False)
                 .head(12)
             )
+            category["valor_label"] = category["valor_real_dashboard"].apply(format_brl)
             fig = px.bar(
                 category,
                 x="valor_real_dashboard",
@@ -175,9 +176,14 @@ def page_visao_geral(
                 orientation="h",
                 title="Gastos por categoria",
                 labels={"valor_real_dashboard": "Valor em R$", "categoria_dashboard": "Categoria"},
+                text="valor_label",
                 color_discrete_sequence=COLOR_SEQUENCE,
             )
-            fig.update_layout(yaxis={"categoryorder": "total ascending"})
+            fig.update_traces(textposition="outside", cliponaxis=False)
+            max_category_value = float(category["valor_real_dashboard"].max()) if not category.empty else 0
+            fig.update_layout(yaxis={"categoryorder": "total ascending"}, margin={"r": 96})
+            if max_category_value > 0:
+                fig.update_xaxes(range=[0, max_category_value * 1.25])
             st.plotly_chart(fig, use_container_width=True)
 
 
@@ -225,6 +231,7 @@ def page_categorias(filtered_transactions: pd.DataFrame):
             .sum()
             .sort_values("valor_real_dashboard", ascending=False)
         )
+        ranking["valor_label"] = ranking["valor_real_dashboard"].apply(format_brl)
         fig = px.bar(
             ranking.head(15),
             x="valor_real_dashboard",
@@ -232,9 +239,14 @@ def page_categorias(filtered_transactions: pd.DataFrame):
             orientation="h",
             title="Ranking de categorias",
             labels={"valor_real_dashboard": "Valor em R$", "categoria_dashboard": "Categoria"},
+            text="valor_label",
             color_discrete_sequence=COLOR_SEQUENCE,
         )
-        fig.update_layout(yaxis={"categoryorder": "total ascending"})
+        max_ranking_value = float(ranking["valor_real_dashboard"].max()) if not ranking.empty else 0
+        fig.update_traces(textposition="outside", cliponaxis=False)
+        fig.update_layout(yaxis={"categoryorder": "total ascending"}, margin={"r": 96})
+        if max_ranking_value > 0:
+            fig.update_xaxes(range=[0, max_ranking_value * 1.25])
         st.plotly_chart(fig, use_container_width=True)
     with right:
         category_options = ranking["categoria_dashboard"].head(8).tolist()
