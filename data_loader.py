@@ -229,6 +229,24 @@ def _month_from_value(value: Any) -> str | None:
     return None
 
 
+def _parse_date_value(value: Any) -> pd.Timestamp:
+    if pd.isna(value) or value == "":
+        return pd.NaT
+    if isinstance(value, pd.Timestamp):
+        return value
+
+    text = str(value).strip()
+    if not text:
+        return pd.NaT
+
+    for date_format in ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y"):
+        parsed = pd.to_datetime(text, format=date_format, errors="coerce")
+        if pd.notna(parsed):
+            return parsed
+
+    return pd.to_datetime(text, dayfirst=True, errors="coerce")
+
+
 def month_label(month_period: Any) -> str:
     if pd.isna(month_period) or not month_period:
         return "Sem mês"
@@ -241,10 +259,20 @@ def month_label(month_period: Any) -> str:
 
 def _ensure_month_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-    if "mes" in df.columns:
+    if {"ano", "mes_num"}.issubset(df.columns):
+        year = pd.to_numeric(df["ano"], errors="coerce")
+        month = pd.to_numeric(df["mes_num"], errors="coerce")
+        valid = year.notna() & month.notna() & month.between(1, 12)
+        df["mes_periodo"] = None
+        df.loc[valid, "mes_periodo"] = (
+            year.loc[valid].astype(int).astype(str)
+            + "-"
+            + month.loc[valid].astype(int).astype(str).str.zfill(2)
+        )
+    elif "mes" in df.columns:
         df["mes_periodo"] = df["mes"].apply(_month_from_value)
     elif "data" in df.columns:
-        dates = pd.to_datetime(df["data"], dayfirst=True, errors="coerce")
+        dates = df["data"].apply(_parse_date_value)
         df["mes_periodo"] = dates.dt.strftime("%Y-%m")
     else:
         df["mes_periodo"] = None
@@ -261,6 +289,7 @@ def _add_text_helpers(df: pd.DataFrame) -> pd.DataFrame:
         "categoria_original_excel",
         "entra_custo_pessoal",
         "parcela_compra",
+        "nome_custo",
         "item",
         "tipo",
     ]:
@@ -277,6 +306,7 @@ def _add_total_flags(df: pd.DataFrame) -> pd.DataFrame:
             "descricao",
             "categoria_dashboard",
             "categoria_original_excel",
+            "nome_custo",
             "item",
             "tipo",
         ]
@@ -312,7 +342,7 @@ def _add_transaction_flags(df: pd.DataFrame) -> pd.DataFrame:
 
     df["is_pagamento_fatura"] = combined.str.contains(
         r"\b(?:fatura|pagamento de fatura|pagamento cartao|pagamento cartão)\b", na=False
-    )
+    ) | category.str.fullmatch(r"(?:cartao de credito|cartão de crédito|cartao credito|cartão crédito)", na=False)
 
     if "entra_custo_pessoal_norm" in df.columns:
         df["entra_custo_pessoal_bool"] = df["entra_custo_pessoal_norm"].isin(["sim", "s", "yes", "true", "1"])
@@ -323,10 +353,9 @@ def _add_transaction_flags(df: pd.DataFrame) -> pd.DataFrame:
         df["valor_real_dashboard"].notna() if "valor_real_dashboard" in df.columns else pd.Series(False, index=df.index)
     )
     df["custo_pessoal_valido"] = (
-        df["entra_custo_pessoal_bool"]
+        (df["entra_custo_pessoal_bool"] | df["is_pagamento_fatura"])
         & value_valid
         & ~df["linha_total_manual"]
-        & ~df["is_pagamento_fatura"]
         & ~df["is_bet_investimento"]
         & ~df["is_bet_retorno"]
     )
@@ -338,14 +367,6 @@ def _add_transaction_flags(df: pd.DataFrame) -> pd.DataFrame:
         value_valid & ~df["linha_total_manual"] & ~df["is_bet_retorno"] & df["is_bet_investimento"],
         "motivo_exclusao",
     ] = "categoria Bet"
-    df.loc[
-        value_valid
-        & ~df["linha_total_manual"]
-        & ~df["is_bet_retorno"]
-        & ~df["is_bet_investimento"]
-        & df["is_pagamento_fatura"],
-        "motivo_exclusao",
-    ] = "fatura/cartão"
     df.loc[
         value_valid
         & ~df["linha_total_manual"]
@@ -372,10 +393,12 @@ def _standardize_sheet(df: pd.DataFrame, sheet_name: str) -> pd.DataFrame:
             df["descricao"] = df["nome_custo"]
 
     for column in [col for col in df.columns if col.startswith("data") or col == "date"]:
-        df[column] = pd.to_datetime(df[column], dayfirst=True, errors="coerce")
+        df[column] = df[column].apply(_parse_date_value)
 
     numeric_candidates = []
     for col in df.columns:
+        if col in {"nome_custo", "descricao", "categoria_dashboard", "categoria_original_excel"}:
+            continue
         if col.startswith(("entra_", "categoria_", "tipo_", "descricao_")):
             continue
         if any(term in col for term in ["valor", "receita", "salario", "aluguel", "saldo"]):
