@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from html import escape
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -64,6 +66,82 @@ def format_eur(value: float | int | None) -> str:
     if pd.isna(value) or value is None:
         value = 0
     return f"€ {float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def format_pct(value: float | int | None) -> str:
+    if pd.isna(value) or value is None:
+        return "—"
+    return f"{float(value):.1f}%".replace(".", ",")
+
+
+def value_tone(value: float | int | None) -> str:
+    if pd.isna(value) or value is None:
+        return "neutral"
+    if float(value) < 0:
+        return "negative"
+    if float(value) > 0:
+        return "positive"
+    return "neutral"
+
+
+def money_color_style(value: float | int | None) -> str:
+    tone = value_tone(value)
+    if tone == "negative":
+        return "color:#dc2626 !important;font-weight:900;"
+    if tone == "positive":
+        return "color:#16a34a !important;font-weight:900;"
+    return "color:#64748b !important;font-weight:850;"
+
+
+def style_table_values(df: pd.DataFrame):
+    money_terms = (
+        "valor",
+        "total",
+        "saldo",
+        "receita",
+        "custo",
+        "investido",
+        "levantado",
+        "excluído",
+        "excluido",
+        "soma",
+        "ticket",
+        "r$",
+        "€",
+    )
+    value_columns = [
+        column
+        for column in df.columns
+        if any(term in normalize_text(str(column)) for term in money_terms)
+    ]
+
+    def cell_style(value):
+        if pd.isna(value):
+            return ""
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if float(value) < 0:
+                return "color: #dc2626; font-weight: 800;"
+            if float(value) > 0:
+                return "color: #16a34a; font-weight: 800;"
+            return ""
+        raw = str(value).strip()
+        if not raw or raw == "—":
+            return ""
+        has_money_marker = any(marker in raw.lower() for marker in ["r$", "€"])
+        normalized = raw.replace("\xa0", " ")
+        if normalized.startswith("-") or "-r$" in normalized.lower() or "-€" in normalized.lower() or "r$ -" in normalized.lower() or "€ -" in normalized.lower():
+            return "color: #dc2626; font-weight: 800;"
+        if has_money_marker:
+            return "color: #16a34a; font-weight: 800;"
+        return ""
+
+    if not value_columns:
+        return df
+    return df.style.map(cell_style, subset=value_columns)
+
+
+def styled_dataframe(df: pd.DataFrame, **kwargs):
+    st.dataframe(style_table_values(df), **kwargs)
 
 
 def make_empty_chart(title: str):
@@ -413,6 +491,17 @@ def personal_costs(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty or "custo_pessoal_valido" not in df.columns:
         return pd.DataFrame()
     return df[df["custo_pessoal_valido"]].copy()
+
+
+def non_bet_transactions(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df.copy()
+    mask = ~(
+        df.get("is_bet_investimento", pd.Series(False, index=df.index))
+        | df.get("is_bet_retorno", pd.Series(False, index=df.index))
+        | _category_norm(df).isin(["bet", "bet retorno"])
+    )
+    return df[mask].copy()
 
 
 def _category_norm(df: pd.DataFrame) -> pd.Series:
@@ -931,15 +1020,22 @@ def page_visao_geral(
         if personal.empty or "origem" not in personal.columns:
             st.info("Ainda não há origem financeira disponível para este período.")
         else:
+            origin_view = personal.copy()
+            origin_view["origem_financeira"] = origin_view["origem"].fillna("Sem origem").astype(str)
+            card_payment_mask = (
+                origin_view.get("categoria_dashboard", pd.Series("", index=origin_view.index)).fillna("").eq("Cartão de Crédito")
+                | origin_view.get("is_pagamento_fatura", pd.Series(False, index=origin_view.index))
+            )
+            origin_view.loc[card_payment_mask, "origem_financeira"] = "Cartão de Crédito"
             origin = (
-                personal.groupby("origem", as_index=False)["valor_real_dashboard"]
+                origin_view.groupby("origem_financeira", as_index=False)["valor_real_dashboard"]
                 .sum()
                 .sort_values("valor_real_dashboard", ascending=False)
             )
             fig = go.Figure(
                 data=[
                     go.Pie(
-                        labels=origin["origem"],
+                        labels=origin["origem_financeira"],
                         values=origin["valor_real_dashboard"],
                         hole=0.62,
                         textinfo="percent",
@@ -957,7 +1053,7 @@ def page_visao_geral(
 
 def page_transacoes(filtered_transactions: pd.DataFrame):
     page_header("Transações", "Consulta detalhada e auditoria das transações do período selecionado.")
-    df = filtered_transactions.copy()
+    df = non_bet_transactions(filtered_transactions)
 
     total_value = sum_value(df)
     ticket = float(df["valor_real_dashboard"].abs().mean()) if "valor_real_dashboard" in df.columns and not df.empty else 0.0
@@ -1054,7 +1150,7 @@ def page_transacoes(filtered_transactions: pd.DataFrame):
             "motivo_exclusao": "Motivo exclusão",
         }
     )
-    st.dataframe(display, width="stretch", hide_index=True)
+    styled_dataframe(display, width="stretch", hide_index=True)
 
 
 def page_categorias(filtered_transactions: pd.DataFrame, dim_meses: pd.DataFrame):
@@ -1167,7 +1263,7 @@ def page_categorias(filtered_transactions: pd.DataFrame, dim_meses: pd.DataFrame
     if category_table.empty:
         st.info("Ainda não há receita mensal para calcular o peso das categorias.")
     else:
-        st.dataframe(category_table, width="stretch", hide_index=True)
+        styled_dataframe(category_table, width="stretch", hide_index=True)
 
 
 def page_origem(filtered_transactions: pd.DataFrame):
@@ -1273,6 +1369,125 @@ def classify_marta_group(row: pd.Series) -> str:
     return "Outros itens"
 
 
+def render_marta_monthly_totals(totals: pd.DataFrame):
+    rows = totals[["Mês", "Valor"]].copy()
+    rows["dif_abs"] = rows["Valor"].diff()
+    rows["dif_pct"] = rows["Valor"].pct_change() * 100
+
+    total_period = float(rows["Valor"].sum())
+    first_value = float(rows.iloc[0]["Valor"]) if not rows.empty else 0
+    last_value = float(rows.iloc[-1]["Valor"]) if not rows.empty else 0
+    total_pct = ((last_value - first_value) / abs(first_value) * 100) if first_value else None
+
+    body = []
+    for _, row in rows.iterrows():
+        diff = row["dif_abs"]
+        pct = row["dif_pct"]
+        if pd.isna(diff):
+            change_html = "<span class='marta-dash'>—</span>"
+        else:
+            direction = "positive" if diff >= 0 else "negative"
+            arrow = "↑" if diff >= 0 else "↓"
+            change_html = (
+                f"<span class='marta-diff {direction}'>{escape(format_brl(diff))}</span>"
+                f"<span class='marta-pct {direction}'>{arrow} {escape(format_pct(pct))}</span>"
+            )
+        body.append(
+            "<tr>"
+            f"<td>{escape(str(row['Mês']))}</td>"
+            f"<td class='money {value_tone(row['Valor'])}' style='{money_color_style(row['Valor'])}'>{escape(format_brl(row['Valor']))}</td>"
+            f"<td class='change'>{change_html}</td>"
+            "</tr>"
+        )
+
+    if total_pct is None:
+        total_change = "<span class='marta-dash'>—</span>"
+    else:
+        total_direction = "positive" if total_pct >= 0 else "negative"
+        total_arrow = "↑" if total_pct >= 0 else "↓"
+        total_change = f"<span class='marta-pct {total_direction}'>{total_arrow} {escape(format_pct(total_pct))}</span>"
+
+    html = (
+        "<div class='marta-total-table-wrap'>"
+        "<table class='marta-total-table'>"
+        "<thead><tr><th>Mês</th><th>Total a receber</th><th>vs mês anterior</th></tr></thead>"
+        f"<tbody>{''.join(body)}</tbody>"
+        "<tfoot><tr>"
+        "<td>TOTAL DO PERÍODO</td>"
+        f"<td class='money {value_tone(total_period)}' style='{money_color_style(total_period)}'>{escape(format_brl(total_period))}</td>"
+        f"<td class='change'>{total_change}</td>"
+        "</tr></tfoot>"
+        "</table></div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_marta_detail_table(display: pd.DataFrame):
+    if display.empty:
+        st.info("Ainda não há itens para mostrar neste período.")
+        return
+
+    group_order = {
+        "Custos partilhados": 0,
+        "Custos exclusivos Marta": 1,
+        "Abatimentos": 2,
+        "Outros itens": 3,
+    }
+    group_classes = {
+        "Custos partilhados": "shared",
+        "Custos exclusivos Marta": "exclusive",
+        "Abatimentos": "discount",
+        "Outros itens": "other",
+    }
+    summary = (
+        display.groupby(["Grupo", "Item", "Tipo"], as_index=False)["Valor"]
+        .sum()
+        .assign(_group_order=lambda data: data["Grupo"].map(group_order).fillna(9))
+        .sort_values(["_group_order", "Grupo", "Item", "Tipo"])
+        .drop(columns=["_group_order"])
+    )
+
+    body = []
+    total_value = 0.0
+    for group, group_df in summary.groupby("Grupo", sort=False):
+        subtotal = float(group_df["Valor"].sum())
+        total_value += subtotal
+        badge_class = group_classes.get(group, "other")
+        first = True
+        for _, row in group_df.iterrows():
+            value = float(row["Valor"])
+            group_cell = f"<span class='marta-group-badge {badge_class}'>{escape(str(group))}</span>" if first else ""
+            first = False
+            body.append(
+                "<tr>"
+                f"<td class='group'>{group_cell}</td>"
+                f"<td>{escape(str(row['Item']))}</td>"
+                f"<td>{escape(str(row['Tipo']))}</td>"
+                f"<td class='money {value_tone(value)}' style='{money_color_style(value)}'>{escape(format_brl(value))}</td>"
+                "</tr>"
+            )
+        body.append(
+            "<tr class='subtotal'>"
+            "<td></td>"
+            f"<td colspan='2'>Subtotal</td>"
+            f"<td class='money {value_tone(subtotal)}' style='{money_color_style(subtotal)}'>{escape(format_brl(subtotal))}</td>"
+            "</tr>"
+        )
+
+    html = (
+        "<div class='marta-detail-table-wrap'>"
+        "<table class='marta-detail-table'>"
+        "<thead><tr><th>Grupo</th><th>Item</th><th>Tipo</th><th>Valor</th></tr></thead>"
+        f"<tbody>{''.join(body)}</tbody>"
+        "<tfoot><tr>"
+        "<td colspan='3'>TOTAL A RECEBER DA MARTA</td>"
+        f"<td class='money {value_tone(total_value)}' style='{money_color_style(total_value)}'>{escape(format_brl(total_value))}</td>"
+        "</tr></tfoot>"
+        "</table></div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def page_marta(df: pd.DataFrame):
     page_header("Marta", "Valores a receber da Marta no período selecionado.")
     table = build_marta_table(df)
@@ -1337,13 +1552,7 @@ def page_marta(df: pd.DataFrame):
         if totals.empty:
             st.info("Ainda não há totais mensais para mostrar.")
         else:
-            totals_display = totals[["Mês", "Valor"]].copy()
-            totals_display["vs mês anterior"] = totals_display["Valor"].diff().apply(
-                lambda value: "—" if pd.isna(value) else format_brl(value)
-            )
-            totals_display["Valor"] = totals_display["Valor"].apply(format_brl)
-            totals_display = totals_display.rename(columns={"Valor": "Total a receber"})
-            st.dataframe(totals_display, width="stretch", hide_index=True)
+            render_marta_monthly_totals(totals)
 
     with detail_col:
         ui.card_title("Detalhe por item")
@@ -1356,8 +1565,7 @@ def page_marta(df: pd.DataFrame):
             display["_tipo_ordem"] = display["Tipo"].map(type_order).fillna(9)
             display = display.sort_values(["mes_periodo", "Grupo", "_tipo_ordem", "Item"]).drop(columns=["mes_periodo", "_tipo_ordem"])
             display = display.drop(columns=["Mês"])
-        display["Valor"] = display["Valor"].apply(format_brl)
-        st.dataframe(display, width="stretch", hide_index=True)
+        render_marta_detail_table(display)
 
 
 def get_item_column(df: pd.DataFrame, fallback: str = "item") -> str | None:
@@ -1442,7 +1650,7 @@ def generic_fact_page(
     value_col = get_value_column(df)
     if not value_col:
         st.warning("Não encontrei uma coluna de valor para calcular os totais.")
-        st.dataframe(df, width="stretch", hide_index=True)
+        styled_dataframe(df, width="stretch", hide_index=True)
         return
 
     clean = df[~df.get("linha_total_manual", pd.Series(False, index=df.index))].copy()
@@ -1550,9 +1758,9 @@ def generic_fact_page(
         )
         if "Valor" in detail.columns:
             detail["Valor"] = detail["Valor"].apply(format_brl)
-        st.dataframe(detail, width="stretch", hide_index=True)
+        styled_dataframe(detail, width="stretch", hide_index=True)
     else:
-        st.dataframe(clean, width="stretch", hide_index=True)
+        styled_dataframe(clean, width="stretch", hide_index=True)
 
 
 def page_apostas(data: dict[str, pd.DataFrame], filtered_transactions: pd.DataFrame):
@@ -1653,7 +1861,7 @@ def page_apostas(data: dict[str, pd.DataFrame], filtered_transactions: pd.DataFr
     )[["Mês", "Investido (R$)", "Levantado (R$)", "Saldo do mês (R$)", "Saldo acumulado (R$)"]]
     for column in ["Investido (R$)", "Levantado (R$)", "Saldo do mês (R$)", "Saldo acumulado (R$)"]:
         display_bets[column] = display_bets[column].apply(format_brl)
-    st.dataframe(display_bets, width="stretch", hide_index=True)
+    styled_dataframe(display_bets, width="stretch", hide_index=True)
 
 
 def page_diagnostico(data: dict[str, pd.DataFrame]):
@@ -1720,16 +1928,16 @@ def page_diagnostico(data: dict[str, pd.DataFrame]):
         if diagnostics["resumo"].empty:
             st.info("A aba fact_transacoes está vazia ou não foi carregada.")
         else:
-            st.dataframe(diagnostics["resumo"], width="stretch", hide_index=True)
+            styled_dataframe(diagnostics["resumo"], width="stretch", hide_index=True)
 
     with st.expander("Abas carregadas", expanded=False):
-        st.dataframe(pd.DataFrame(summary), width="stretch", hide_index=True)
+        styled_dataframe(pd.DataFrame(summary), width="stretch", hide_index=True)
 
     with st.expander("Linhas excluídas", expanded=False):
         if diagnostics["exclusoes"].empty:
             st.success("Nenhuma linha foi excluída dos gastos pessoais.")
         else:
-            st.dataframe(diagnostics["exclusoes"], width="stretch", hide_index=True)
+            styled_dataframe(diagnostics["exclusoes"], width="stretch", hide_index=True)
 
     for title, key, empty_message in [
         ("Totais por mês", "meses", "Ainda não há meses reconhecidos em fact_transacoes."),
@@ -1742,11 +1950,11 @@ def page_diagnostico(data: dict[str, pd.DataFrame]):
             if diagnostics[key].empty:
                 st.info(empty_message)
             else:
-                st.dataframe(diagnostics[key], width="stretch", hide_index=True)
+                styled_dataframe(diagnostics[key], width="stretch", hide_index=True)
 
     with st.expander("Colunas esperadas", expanded=False):
         expected = [{"aba": sheet, "colunas_esperadas": ", ".join(cols)} for sheet, cols in EXPECTED_COLUMNS.items()]
-        st.dataframe(pd.DataFrame(expected), width="stretch", hide_index=True)
+        styled_dataframe(pd.DataFrame(expected), width="stretch", hide_index=True)
 
 
 def render_app():

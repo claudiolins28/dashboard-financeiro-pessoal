@@ -416,6 +416,231 @@ def inject_global_css():
             font-size: 0.9rem;
         }
 
+        .marta-total-table-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-soft);
+            padding: 0.55rem 0.75rem 0.7rem;
+            overflow: hidden;
+        }
+
+        .marta-total-table {
+            width: 100%;
+            border-collapse: collapse;
+            color: var(--text);
+            font-size: 0.92rem;
+        }
+
+        .marta-total-table thead th {
+            padding: 0.82rem 0.7rem;
+            border-bottom: 1px solid var(--border);
+            color: #64748b;
+            background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+            font-size: 0.82rem;
+            font-weight: 850;
+            text-align: left;
+        }
+
+        .marta-total-table tbody td {
+            padding: 0.76rem 0.7rem;
+            border-bottom: 1px solid #edf2f8;
+            vertical-align: middle;
+        }
+
+        .marta-total-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .marta-total-table td.money {
+            text-align: right;
+            white-space: nowrap;
+            font-weight: 800;
+        }
+
+        .marta-total-table td.money.positive,
+        .marta-detail-table td.money.positive {
+            color: var(--green);
+        }
+
+        .marta-total-table td.money.negative,
+        .marta-detail-table td.money.negative {
+            color: var(--red);
+        }
+
+        .marta-total-table td.change {
+            text-align: right;
+            white-space: nowrap;
+        }
+
+        .marta-total-table tfoot td {
+            padding: 0.9rem 0.7rem;
+            border-top: 1px solid #dbeafe;
+            background: linear-gradient(135deg, #eef6ff 0%, #f8fbff 100%);
+            color: #0f4aa8;
+            font-weight: 950;
+        }
+
+        .marta-total-table tfoot td:first-child {
+            border-radius: 0.65rem 0 0 0.65rem;
+            letter-spacing: 0.01em;
+            font-size: 0.82rem;
+        }
+
+        .marta-total-table tfoot td:last-child {
+            border-radius: 0 0.65rem 0.65rem 0;
+        }
+
+        .marta-diff {
+            display: block;
+            color: #64748b;
+            font-size: 0.78rem;
+            font-weight: 750;
+            line-height: 1.05;
+        }
+
+        .marta-pct {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.16rem;
+            margin-top: 0.1rem;
+            font-size: 0.9rem;
+            font-weight: 900;
+            line-height: 1.15;
+        }
+
+        .marta-pct.positive,
+        .marta-diff.positive {
+            color: var(--green);
+        }
+
+        .marta-pct.negative,
+        .marta-diff.negative {
+            color: var(--red);
+        }
+
+        .marta-dash {
+            color: #94a3b8;
+            font-weight: 900;
+        }
+
+        .marta-detail-table-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-soft);
+            padding: 0.55rem 0.75rem 0.7rem;
+            overflow-x: auto;
+        }
+
+        .marta-detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            color: var(--text);
+            font-size: 0.9rem;
+        }
+
+        .marta-detail-table thead th {
+            padding: 0.82rem 0.7rem;
+            border-bottom: 1px solid var(--border);
+            color: #64748b;
+            background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+            font-size: 0.82rem;
+            font-weight: 850;
+            text-align: left;
+        }
+
+        .marta-detail-table tbody td {
+            padding: 0.68rem 0.7rem;
+            border-bottom: 1px solid #edf2f8;
+            vertical-align: top;
+        }
+
+        .marta-detail-table td.group {
+            width: 9.5rem;
+        }
+
+        .marta-detail-table td.money {
+            text-align: right;
+            white-space: nowrap;
+            font-weight: 850;
+        }
+
+        .marta-detail-table tr.subtotal td {
+            border-bottom: 1px solid #e2e8f0;
+            background: #f8fbff;
+            color: #0f4aa8;
+            font-weight: 900;
+        }
+
+        .marta-detail-table tr.subtotal td:first-child {
+            background: #f8fbff;
+        }
+
+        .marta-detail-table tfoot td {
+            padding: 0.95rem 0.7rem;
+            border-top: 1px solid #dbeafe;
+            background: linear-gradient(135deg, #eef6ff 0%, #f8fbff 100%);
+            color: #0f4aa8;
+            font-weight: 950;
+        }
+
+        .marta-detail-table tfoot td:first-child {
+            border-radius: 0.65rem 0 0 0.65rem;
+            letter-spacing: 0.01em;
+            font-size: 0.82rem;
+        }
+
+        .marta-detail-table tfoot td:last-child {
+            border-radius: 0 0.65rem 0.65rem 0;
+        }
+
+        .marta-group-badge {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 0.45rem;
+            padding: 0.26rem 0.48rem;
+            font-size: 0.76rem;
+            font-weight: 900;
+            white-space: nowrap;
+        }
+
+        .marta-group-badge.shared {
+            color: #0f4aa8;
+            background: #dbeafe;
+        }
+
+        .marta-group-badge.exclusive {
+            color: #047857;
+            background: #d1fae5;
+        }
+
+        .marta-group-badge.discount {
+            color: #dc2626;
+            background: #fee2e2;
+        }
+
+        .marta-group-badge.other {
+            color: #475569;
+            background: #e2e8f0;
+        }
+
+        .marta-total-table td.money.positive,
+        .marta-total-table tfoot td.money.positive,
+        .marta-detail-table td.money.positive,
+        .marta-detail-table tr.subtotal td.money.positive,
+        .marta-detail-table tfoot td.money.positive {
+            color: var(--green) !important;
+        }
+
+        .marta-total-table td.money.negative,
+        .marta-total-table tfoot td.money.negative,
+        .marta-detail-table td.money.negative,
+        .marta-detail-table tr.subtotal td.money.negative,
+        .marta-detail-table tfoot td.money.negative {
+            color: var(--red) !important;
+        }
+
         div[data-testid="stExpander"] {
             background: var(--surface);
             border: 1px solid var(--border);
@@ -614,7 +839,7 @@ def chart_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#25324b", "size": 12},
-        title=None if not show_title else fig.layout.title,
+        title=fig.layout.title if show_title else {"text": ""},
         margin={"l": 54, "r": 34, "t": top_margin, "b": bottom_margin},
         hoverlabel={"bgcolor": "white", "bordercolor": "#d8e3f2", "font": {"color": "#0b1f44"}},
     )
