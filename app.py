@@ -1056,7 +1056,7 @@ def page_transacoes(filtered_transactions: pd.DataFrame):
     df = non_bet_transactions(filtered_transactions)
 
     total_value = sum_value(df)
-    ticket = float(df["valor_real_dashboard"].abs().mean()) if "valor_real_dashboard" in df.columns and not df.empty else 0.0
+    total_euro = sum_value(df, "valor_euro_dashboard") if "valor_euro_dashboard" in df.columns else 0.0
     biggest = 0.0
     biggest_label = "Sem descrição"
     if "valor_real_dashboard" in df.columns and not df.empty:
@@ -1072,7 +1072,7 @@ def page_transacoes(filtered_transactions: pd.DataFrame):
     with c2:
         metric_card("Valor total filtrado", format_brl(total_value))
     with c3:
-        metric_card("Ticket médio", format_brl(ticket))
+        metric_card("Total em Euro", format_eur(total_euro))
     with c4:
         metric_card("Maior transação", format_brl(biggest), biggest_label[:32])
 
@@ -1767,9 +1767,11 @@ def page_apostas(data: dict[str, pd.DataFrame], filtered_transactions: pd.DataFr
     page_header("Apostas KTO", "Esta página é isolada e não entra nos gastos pessoais principais.")
     tx = filtered_transactions.copy()
     from_transactions = pd.DataFrame()
+    bet_detail = pd.DataFrame()
     if not tx.empty and {"is_bet_investimento", "is_bet_retorno", "valor_real_dashboard", "mes_periodo"}.issubset(tx.columns):
         bet_rows = tx[(tx["is_bet_investimento"] | tx["is_bet_retorno"]) & ~tx["linha_total_manual"]].copy()
         if not bet_rows.empty:
+            bet_detail = bet_rows.copy()
             invest = (
                 bet_rows[bet_rows["is_bet_investimento"]]
                 .groupby("mes_periodo", as_index=False)["valor_real_dashboard"]
@@ -1801,14 +1803,12 @@ def page_apostas(data: dict[str, pd.DataFrame], filtered_transactions: pd.DataFr
     bets["saldo_acumulado"] = bets["saldo"].cumsum()
     bets["mes_label"] = bets["mes_periodo"].apply(month_label)
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     with c1:
         metric_card("Investido no período", format_brl(bets["valor_investido"].sum()))
     with c2:
         metric_card("Levantado no período", format_brl(bets["valor_levantado"].sum()))
     with c3:
-        metric_card("Saldo do período", format_brl(bets["saldo"].sum()))
-    with c4:
         metric_card("Saldo acumulado", format_brl(bets["saldo_acumulado"].iloc[-1] if not bets.empty else 0))
 
     month_order = bets.sort_values("mes_periodo")["mes_label"].tolist()
@@ -1848,6 +1848,52 @@ def page_apostas(data: dict[str, pd.DataFrame], filtered_transactions: pd.DataFr
         min_bet_value = float(bets[["valor_investido", "valor_levantado", "saldo_acumulado"]].min().min())
         fig.update_yaxes(range=[min(0, min_bet_value * 1.15), max_bet_value * 1.22])
     st.plotly_chart(fig, use_container_width=True)
+
+    if not bet_detail.empty:
+        ui.card_title("Detalhe das transações KTO")
+        detail = bet_detail.copy()
+        detail["Tipo"] = detail["is_bet_retorno"].map({True: "Levantado", False: "Investido"})
+        detail["Investido (R$)"] = detail["valor_real_dashboard"].where(detail["is_bet_investimento"], 0)
+        detail["Levantado (R$)"] = detail["valor_real_dashboard"].where(detail["is_bet_retorno"], 0)
+        if "valor_euro_dashboard" in detail.columns:
+            detail["Valor €"] = detail["valor_euro_dashboard"]
+        else:
+            detail["Valor €"] = 0
+        if "mes_label" not in detail.columns:
+            detail["mes_label"] = detail["mes_periodo"].apply(month_label)
+        sort_columns = [col for col in ["mes_periodo", "data", "Tipo", "descricao"] if col in detail.columns]
+        if sort_columns:
+            detail = detail.sort_values(sort_columns)
+        detail_columns = [
+            "mes_label",
+            "data",
+            "Tipo",
+            "descricao",
+            "origem",
+            "categoria_dashboard",
+            "Investido (R$)",
+            "Levantado (R$)",
+            "Valor €",
+        ]
+        visible_detail_columns = [column for column in detail_columns if column in detail.columns]
+        detail = detail[visible_detail_columns].copy()
+        if "data" in detail.columns:
+            detail["data"] = pd.to_datetime(detail["data"], errors="coerce").dt.strftime("%d/%m/%Y")
+        for column in ["Investido (R$)", "Levantado (R$)"]:
+            if column in detail.columns:
+                detail[column] = detail[column].apply(lambda value: "—" if pd.isna(value) or float(value) == 0 else format_brl(value))
+        if "Valor €" in detail.columns:
+            detail["Valor €"] = detail["Valor €"].apply(format_eur)
+        detail = detail.rename(
+            columns={
+                "mes_label": "Mês",
+                "data": "Data",
+                "descricao": "Descrição",
+                "origem": "Origem",
+                "categoria_dashboard": "Categoria",
+            }
+        )
+        styled_dataframe(detail, width="stretch", hide_index=True)
 
     ui.card_title("Resumo mensal")
     display_bets = bets.rename(
